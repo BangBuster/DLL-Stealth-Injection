@@ -85,6 +85,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 int referencePoint() {
 	return 0;
 }
+
 StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	loaderdata _loaderdata;
 	// Parse PE headers
@@ -135,6 +136,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }
+
 StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	// Load DLL into own memory
 	std::ifstream File(DLLpath, std::ios::binary | std::ios::ate);
@@ -195,47 +197,4 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
-}
-
-DWORD GetProcessID(LPCSTR processName) {
-	HWND hwnd = FindWindowA(NULL, processName);
-	DWORD er = GetLastError();
-	if (!hwnd) {
-		std::cout << er;
-		return false;
-	}
-	DWORD procID;
-	if (!GetWindowThreadProcessId(hwnd, &procID)) {
-		return false;
-	}
-	else {
-		return procID;
-	}
-}
-HANDLE GetHandle_ALL(DWORD processID) {
-	HANDLE handle = OpenProcess(PROCESS_ALL_ACCESS, false, processID);
-	if (!OpenProcess) {
-		return (HANDLE)false;
-	}
-	else {
-		return handle;
-	}
-}
-int main() {
-	// Load DLL into own memory
-	std::ifstream File("E:\\Visual Studio Projects\\Stealth DLL Injection\\DLL Stealth Injection\\x64\\Release\\exampleDLL.dll", std::ios::binary | std::ios::ate);
-	size_t szFile = File.tellg();
-	
-	PBYTE FileBuffer = new BYTE[szFile];
-	File.seekg(0, std::ios::beg);
-	File.read((char*)(FileBuffer), szFile);
-	File.close();
-
-	DWORD pID = GetProcessID("Calculator");
-	HANDLE hProcess = GetHandle_ALL(pID);
-	try {
-		StealthInject(hProcess, FileBuffer);
-	}
-	catch (int error) { std::cout << "Failed with: " << error << "\n"; return error; }
-	return 0;
 }
