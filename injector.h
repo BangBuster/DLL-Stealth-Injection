@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <fstream>
 #include <stdexcept>
+
 #define ERROR_INVALID_FILE			1
 #define ERROR_ALLOCATION_IMAGE		2
 #define ERROR_WRITE_IMAGE			3
