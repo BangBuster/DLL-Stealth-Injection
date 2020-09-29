@@ -35,7 +35,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 		}
 		pIBR = (PIMAGE_BASE_RELOCATION)((LPBYTE)pIBR + pIBR->SizeOfBlock); // next block
 	}
-	// TODO: comment on imports
+	// TODO comment: on imports
 	// fix DLL imports and call if necessary
 	PIMAGE_IMPORT_DESCRIPTOR pIID = LoaderParams->ImportDirectory;
 	while (pIID->Characteristics){			// While imports exists
