@@ -12,8 +12,10 @@
 #define ERROR_WRITE_LOADER_DATA		6
 #define ERROR_WRITE_SHELLCODE		7
 #define ERROR_CREATE_THREAD			8
+#define ERROR_INVALID_HANDLE		9
 
 extern struct StealthInject {
 	StealthInject(HANDLE hProcess, LPVOID baseAddrDLL);
 	StealthInject(HANDLE hProcess, LPCSTR DLLpath);
+	DWORD lastError;
 };

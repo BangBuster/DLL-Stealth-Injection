@@ -35,7 +35,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 		}
 		pIBR = (PIMAGE_BASE_RELOCATION)((LPBYTE)pIBR + pIBR->SizeOfBlock); // next block
 	}
-	// TODO comment: on imports
+
 	// fix DLL imports and call if necessary
 	PIMAGE_IMPORT_DESCRIPTOR pIID = LoaderParams->ImportDirectory;
 	while (pIID->Characteristics){			// While imports exists
@@ -46,8 +46,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 		if (!hModule)
 			return FALSE;
 
-		while (OrigFirstThunk->u1.AddressOfData)
-		{
+		while (OrigFirstThunk->u1.AddressOfData){
 			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) // if function is imported by ordinal
 			{
 				// Import by ordinal
@@ -59,11 +58,12 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 
 				FirstThunk->u1.Function = Function; // append function to IAT
 			}
-			else
-			{
+			else {
 				// Import by name
 				PIMAGE_IMPORT_BY_NAME pIBN = (PIMAGE_IMPORT_BY_NAME)((LPBYTE)LoaderParams->ImageBaseAddr + OrigFirstThunk->u1.AddressOfData);
+				
 				DWORD64 Function = (DWORD64)LoaderParams->fnGetProcAddress(hModule, (LPCSTR)pIBN->Name); // get function addr by its name
+				
 				if (!Function)
 					return FALSE;
 
@@ -74,19 +74,17 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 		}
 		pIID++;
 	}
-	if (LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint)
-	{
+	if (LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint){
 		dllEntry EntryPoint = (dllEntry)((LPBYTE)LoaderParams->ImageBaseAddr + LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint);
 		return EntryPoint((HMODULE)LoaderParams->ImageBaseAddr, DLL_PROCESS_ATTACH, NULL); // Call the entry point
 	}
 	return TRUE;
 }
 
-int referencePoint() {
-	return 0;
-}
+void referencePoint() {}
 
 StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
+	if (!hProcess) { throw ERROR_INVALID_HANDLE; }
 	loaderdata _loaderdata;
 	// Parse PE headers
 	PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)baseAddrDLL;
@@ -100,7 +98,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	// Copy the image to target process
 	if (!WriteProcessMemory(hProcess, ExecutableImage, baseAddrDLL,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
-		std::cerr << GetLastError() << "\n";
+		StealthInject::lastError = GetLastError();
 		throw ERROR_WRITE_IMAGE;
 	}
 
@@ -108,7 +106,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++) {
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
 			(PVOID)((LPBYTE)baseAddrDLL + pSection[i].PointerToRawData), pSection[i].SizeOfRawData, NULL)) {
-			std::cerr << GetLastError() << "\n";
+			StealthInject::lastError = GetLastError();
 			throw ERROR_WRITE_SECTION;
 		}
 	}
@@ -128,9 +126,10 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { throw ERROR_WRITE_LOADER_DATA; }
 	// Write Internal loader shellcode
 	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { throw ERROR_WRITE_SHELLCODE; }
+	
 	// Create remote thread to call the internal loader
 	HANDLE hThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1), LoaderMemory, NULL, NULL);
-	if (!hThread) { std::cerr << GetLastError() << "\n"; throw ERROR_CREATE_THREAD; }
+	if (!hThread) { StealthInject::lastError = GetLastError(); throw ERROR_CREATE_THREAD; }
 	WaitForSingleObject(hThread, INFINITE);
 
 	// Clean up
@@ -138,6 +137,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 }
 
 StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
+	if (!hProcess) { throw ERROR_INVALID_HANDLE; }
 	// Load DLL into own memory
 	std::ifstream File(DLLpath, std::ios::binary | std::ios::ate);
 	size_t szFile = File.tellg();
@@ -158,11 +158,11 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	// Allocate memory for the image in remote process
 	PVOID ExecutableImage = VirtualAllocEx(hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!ExecutableImage) { throw ERROR_ALLOCATION_IMAGE; }
+	if (!ExecutableImage) { StealthInject::lastError = GetLastError(); throw ERROR_ALLOCATION_IMAGE; }
 	// Copy the image to target process
 	if(!WriteProcessMemory(hProcess, ExecutableImage, FileBuffer,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
-		std::cerr << GetLastError() << "\n";
+		StealthInject::lastError = GetLastError();
 		throw ERROR_WRITE_IMAGE;
 	}
 
@@ -170,7 +170,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++){
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
 			(PVOID)((LPBYTE)FileBuffer + pSection[i].PointerToRawData), pSection[i].SizeOfRawData, NULL)) {
-			std::cerr << GetLastError() << "\n";
+			StealthInject::lastError = GetLastError();
 			throw ERROR_WRITE_SECTION;
 		}
 	}
@@ -192,9 +192,8 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { throw ERROR_WRITE_SHELLCODE; }
 	// Create remote thread to call the internal loader
 	HANDLE hThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1), LoaderMemory, NULL, NULL);
-	if (!hThread) { std::cerr << GetLastError() << "\n"; throw ERROR_CREATE_THREAD; }
+	if (!hThread) { StealthInject::lastError = GetLastError(); throw ERROR_CREATE_THREAD; }
 	WaitForSingleObject(hThread, INFINITE);
-
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }
