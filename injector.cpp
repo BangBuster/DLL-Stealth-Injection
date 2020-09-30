@@ -39,16 +39,16 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 	// fix DLL imports and call if necessary
 	PIMAGE_IMPORT_DESCRIPTOR pIID = LoaderParams->ImportDirectory;
 	while (pIID->Characteristics){			// While imports exists
-		PIMAGE_THUNK_DATA OrigFirstThunk = (PIMAGE_THUNK_DATA)((LPBYTE)LoaderParams->ImageBaseAddr + pIID->OriginalFirstThunk);
-		PIMAGE_THUNK_DATA FirstThunk = (PIMAGE_THUNK_DATA)((LPBYTE)LoaderParams->ImageBaseAddr + pIID->FirstThunk);
-		HMODULE hModule = LoaderParams->fnLoadLibraryA((LPCSTR)LoaderParams->ImageBaseAddr + pIID->Name);
+		PIMAGE_THUNK_DATA OrigFirstThunk = (PIMAGE_THUNK_DATA)((LPBYTE)LoaderParams->ImageBaseAddr + pIID->OriginalFirstThunk); // look up table
+		PIMAGE_THUNK_DATA FirstThunk = (PIMAGE_THUNK_DATA)((LPBYTE)LoaderParams->ImageBaseAddr + pIID->FirstThunk); // IAT
+		HMODULE hModule = LoaderParams->fnLoadLibraryA((LPCSTR)LoaderParams->ImageBaseAddr + pIID->Name); // loads descriptor library
 
 		if (!hModule)
 			return FALSE;
 
 		while (OrigFirstThunk->u1.AddressOfData)
 		{
-			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG)
+			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) // if function is imported by ordinal
 			{
 				// Import by ordinal
 				DWORD64 Function = (DWORD64)LoaderParams->fnGetProcAddress(hModule,
@@ -57,17 +57,17 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 				if (!Function)
 					return FALSE;
 
-				FirstThunk->u1.Function = Function;
+				FirstThunk->u1.Function = Function; // append function to IAT
 			}
 			else
 			{
 				// Import by name
 				PIMAGE_IMPORT_BY_NAME pIBN = (PIMAGE_IMPORT_BY_NAME)((LPBYTE)LoaderParams->ImageBaseAddr + OrigFirstThunk->u1.AddressOfData);
-				DWORD64 Function = (DWORD64)LoaderParams->fnGetProcAddress(hModule, (LPCSTR)pIBN->Name);
+				DWORD64 Function = (DWORD64)LoaderParams->fnGetProcAddress(hModule, (LPCSTR)pIBN->Name); // get function addr by its name
 				if (!Function)
 					return FALSE;
 
-				FirstThunk->u1.Function = Function;
+				FirstThunk->u1.Function = Function; // append function to IAT
 			}
 			OrigFirstThunk++;
 			FirstThunk++;
