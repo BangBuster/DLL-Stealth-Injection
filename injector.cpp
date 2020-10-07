@@ -197,3 +197,21 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }
+StealthInject::StealthInject(HANDLE hProcess, LPCSTR Dllpath, bool regularInject) {
+	if (!regularInject) { throw ERROR_INVALID_PARAMETERS; }
+	if (!hProcess) { throw ERROR_INVALID_HANDLE; }
+
+	size_t strSz = strlen(Dllpath);
+
+	LPVOID strAddress = VirtualAllocEx(hProcess, NULL, strSz, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	if (!strAddress) { StealthInject::lastError = GetLastError(); throw ERROR_ALLOCATION_STRING; }
+
+	if (!WriteProcessMemory(hProcess, strAddress, Dllpath, strSz, 0)) { StealthInject::lastError = GetLastError();  throw ERROR_WRITE_STRING; }
+	
+	HANDLE thread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryA, strAddress, NULL, NULL);
+	if (!thread) { StealthInject::lastError = GetLastError(); throw ERROR_THREAD_CREATION; }
+
+	WaitForSingleObject(thread, INFINITE);
+	CloseHandle(thread);
+	VirtualFreeEx(hProcess, strAddress, 0, MEM_RELEASE);
+}
