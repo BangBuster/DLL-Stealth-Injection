@@ -7,7 +7,10 @@
 int main(HMODULE hModule) {
     AllocConsole();
     freopen("CONOUT$", "w", stdout);
-    std::cout << "I'm IN!" << std::endl;
+    while (1) {
+        std::cout << "I'm IN!" << std::endl;
+        Sleep(100);
+    }
    
     FreeConsole();
     FreeLibraryAndExitThread(hModule, 0);

@@ -21,6 +21,6 @@
 extern struct StealthInject {
 	StealthInject(HANDLE hProcess, LPVOID baseAddrDLL);
 	StealthInject(HANDLE hProcess, LPCSTR DLLpath);
-	StealthInject(HANDLE hProcess, LPCSTR Dllpath, bool regularInject = 0);
+	StealthInject(HANDLE hProcess, LPCSTR Dllpath, bool regularInject);
 	DWORD lastError = 0;
 };

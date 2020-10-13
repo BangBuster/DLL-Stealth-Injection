@@ -76,6 +76,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 	}
 	if (LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint){
 		dllEntry EntryPoint = (dllEntry)((LPBYTE)LoaderParams->ImageBaseAddr + LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint);
+		ZeroMemory(LoaderParams->ImageBaseAddr, 0x9f); // Remove PE signatures
 		return EntryPoint((HMODULE)LoaderParams->ImageBaseAddr, DLL_PROCESS_ATTACH, NULL); // Call the entry point
 	}
 	return TRUE;
@@ -159,13 +160,12 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	PVOID ExecutableImage = VirtualAllocEx(hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!ExecutableImage) { StealthInject::lastError = GetLastError(); throw ERROR_ALLOCATION_IMAGE; }
-	// Copy the image to target process
+	// Copy the headers to target process
 	if(!WriteProcessMemory(hProcess, ExecutableImage, FileBuffer,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
 		StealthInject::lastError = GetLastError();
 		throw ERROR_WRITE_IMAGE;
 	}
-
 	// Copy sections
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++){
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
