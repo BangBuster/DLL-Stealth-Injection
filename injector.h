@@ -3,6 +3,9 @@
 #include <Windows.h>
 #include <fstream>
 #include <stdexcept>
+#include <winternl.h>
+#include <JustBanMe.h>
+#include <JustBanMe.cpp>
 
 #define ERROR_INVALID_FILE			1
 #define ERROR_ALLOCATION_IMAGE		2
@@ -23,4 +26,6 @@ extern struct StealthInject {
 	StealthInject(HANDLE hProcess, LPCSTR DLLpath);
 	StealthInject(HANDLE hProcess, LPCSTR Dllpath, bool regularInject);
 	DWORD lastError = 0;
+	int modifyPEB(LPCWSTR pathToDLL); /* Will return 0 on success, 1 if DLL not found in list.
+									  Hide your module from the PEB so it won't be listed in the process. */
 };

@@ -102,7 +102,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 		StealthInject::lastError = GetLastError();
 		throw ERROR_WRITE_IMAGE;
 	}
-
+	
 	// Copy sections
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++) {
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
@@ -111,7 +111,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 			throw ERROR_WRITE_SECTION;
 		}
 	}
-
+	
 	// Fill loader data
 	_loaderdata.ImageBaseAddr = ExecutableImage;
 	_loaderdata.NtHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)ExecutableImage + pDosHeader->e_lfanew);
@@ -214,4 +214,35 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR Dllpath, bool regularInject
 	WaitForSingleObject(thread, INFINITE);
 	CloseHandle(thread);
 	VirtualFreeEx(hProcess, strAddress, 0, MEM_RELEASE);
+}
+
+int StealthInject::modifyPEB(LPCWSTR pathToDLL) {
+	PTEB pTEB;
+	PPEB pPEB;
+	PPEB_LDR_DATA pLdrData;
+	PLIST_ENTRY listHead, bufferEntry;
+	PLDR_DATA_TABLE_ENTRY LdrEntry;
+#ifdef _WIN64
+	pPEB = (PPEB)__readgsqword(12 * sizeof(LPVOID));
+#else
+	pPEB = (PPEB)__readfsdword(12 * sizeof(LPVOID));
+#endif
+	pLdrData = pPEB->Ldr;
+	listHead = &pLdrData->InMemoryOrderModuleList;
+	bufferEntry = listHead->Flink;
+	bool found = false;
+	do {
+		LdrEntry = (PLDR_DATA_TABLE_ENTRY)((ADDRESS)bufferEntry - sizeof(LPVOID)*2);
+		UNICODE_STRING dllName = LdrEntry->FullDllName;
+		if (!wcscmp(dllName.Buffer, pathToDLL)) { // If module name equals to provided name, patch the PEB
+			PLIST_ENTRY previous = bufferEntry->Blink;
+			PLIST_ENTRY next = bufferEntry->Flink;
+			previous->Flink = next;
+			next->Blink = previous;
+			found = true;
+		}
+		bufferEntry = bufferEntry->Flink;
+	} while (bufferEntry != listHead);
+	if (!found) { return 1; } // DLL not found
+	return 0;
 }
