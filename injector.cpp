@@ -2,8 +2,9 @@
 
 typedef HMODULE(__stdcall* pLoadLibraryA)(LPCSTR);
 typedef FARPROC(__stdcall* pGetProcAddress)(HMODULE, LPCSTR);
-
 typedef int(__stdcall* dllEntry)(HMODULE, DWORD, LPVOID);
+typedef NTSTATUS(__stdcall* fNtCreateThreadEx)(HANDLE* pHandle, ACCESS_MASK DesiredAccess, void* pAttr, HANDLE hTargetProc, void* pFunc, void* pArg,
+	ULONG Flags, SIZE_T ZeroBits, SIZE_T StackSize, SIZE_T MaxStackSize, void* pAttrListOut);
 
 struct loaderdata {
 	LPVOID ImageBaseAddr;
@@ -129,9 +130,14 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { throw ERROR_WRITE_SHELLCODE; }
 	
 	// Create remote thread to call the internal loader
-	HANDLE hThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1), LoaderMemory, NULL, NULL);
-	if (!hThread) { StealthInject::lastError = GetLastError(); throw ERROR_CREATE_THREAD; }
-	WaitForSingleObject(hThread, INFINITE);
+	fNtCreateThreadEx nt_create_thread_address = (fNtCreateThreadEx)GetProcAddress(GetModuleHandleA("ntdll.dll"), "ZwCreateThreadEx");
+	HANDLE remote_thread = NULL;
+	NTSTATUS status = nt_create_thread_address(&remote_thread, 0x1FFFFF, NULL, hProcess, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1),
+		LoaderMemory, NULL, NULL, NULL, NULL, NULL);
+	if (remote_thread == NULL || status) {
+		throw ERROR_CREATE_THREAD;
+	}
+	WaitForSingleObject(remote_thread, INFINITE);
 
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
@@ -191,9 +197,15 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	// Write Internal loader shellcode
 	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { throw ERROR_WRITE_SHELLCODE; }
 	// Create remote thread to call the internal loader
-	HANDLE hThread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1), LoaderMemory, NULL, NULL);
-	if (!hThread) { StealthInject::lastError = GetLastError(); throw ERROR_CREATE_THREAD; }
-	WaitForSingleObject(hThread, INFINITE);
+	fNtCreateThreadEx nt_create_thread_address = (fNtCreateThreadEx)GetProcAddress(GetModuleHandleA("ntdll.dll"), "ZwCreateThreadEx");
+	HANDLE remote_thread = NULL;
+	NTSTATUS status = nt_create_thread_address(&remote_thread, 0x1FFFFF, NULL, hProcess, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1),
+		LoaderMemory, NULL, NULL, NULL, NULL, NULL);
+	if (remote_thread == NULL || status) {
+		throw ERROR_CREATE_THREAD;
+	}
+	WaitForSingleObject(remote_thread, INFINITE);
+	
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }

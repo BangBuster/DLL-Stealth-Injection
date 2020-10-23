@@ -4,7 +4,7 @@
 #include <tlhelp32.h>
 #pragma warning(disable:4996)
 
-int main(HMODULE hModule) {
+inline void print() {
     AllocConsole();
     freopen("CONOUT$", "w", stdout);
     while (1) {
@@ -13,8 +13,6 @@ int main(HMODULE hModule) {
     }
    
     FreeConsole();
-    FreeLibraryAndExitThread(hModule, 0);
-    return 0;
 }
 BOOL APIENTRY DllMain(HMODULE hModule,
     DWORD  ul_reason_for_call,
@@ -25,7 +23,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
     {
     case DLL_PROCESS_ATTACH:
     {
-        CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)main, hModule, NULL, NULL);
+        print();
         break;
     }
     case DLL_THREAD_ATTACH:
