@@ -85,8 +85,8 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 
 void referencePoint() {}
 
-StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
-	if (!hProcess) { throw ERROR_INVALID_HANDLE; }
+RETURN_STATUS StealthInject::InjectFromMemory(ADDRESS baseAddrDLL) {
+	if (!hProcess) { return ERROR_INVALID_HANDLE; }
 	loaderdata _loaderdata;
 	// Parse PE headers
 	PIMAGE_DOS_HEADER pDosHeader = (PIMAGE_DOS_HEADER)baseAddrDLL;
@@ -96,20 +96,20 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	// Allocate memory for the image in remote process
 	PVOID ExecutableImage = VirtualAllocEx(hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!ExecutableImage) { throw ERROR_ALLOCATION_IMAGE; }
+	if (!ExecutableImage) { this->lastError = GetLastError(); return ERROR_ALLOCATION_IMAGE; }
 	// Copy the image to target process
-	if (!WriteProcessMemory(hProcess, ExecutableImage, baseAddrDLL,
+	if (!WriteProcessMemory(hProcess, ExecutableImage, (LPVOID)baseAddrDLL,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
-		StealthInject::lastError = GetLastError();
-		throw ERROR_WRITE_IMAGE;
+		this->lastError = GetLastError();
+		return ERROR_WRITE_IMAGE;
 	}
 	
 	// Copy sections
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++) {
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
 			(PVOID)((LPBYTE)baseAddrDLL + pSection[i].PointerToRawData), pSection[i].SizeOfRawData, NULL)) {
-			StealthInject::lastError = GetLastError();
-			throw ERROR_WRITE_SECTION;
+			this->lastError = GetLastError();
+			return ERROR_WRITE_SECTION;
 		}
 	}
 	
@@ -123,11 +123,11 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 
 	// Allocate memory for the loader data
 	PVOID LoaderMemory = VirtualAllocEx(hProcess, NULL, sizeof(loaderdata), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!LoaderMemory) { throw ERROR_ALLOCATION_LOADER_DATA; }
+	if (!LoaderMemory) { return ERROR_ALLOCATION_LOADER_DATA; }
 	// Write loader data to memory
-	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { throw ERROR_WRITE_LOADER_DATA; }
+	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { return ERROR_WRITE_LOADER_DATA; }
 	// Write Internal loader shellcode
-	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { throw ERROR_WRITE_SHELLCODE; }
+	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { return ERROR_WRITE_SHELLCODE; }
 	
 	// Create remote thread to call the internal loader
 	fNtCreateThreadEx nt_create_thread_address = (fNtCreateThreadEx)GetProcAddress(GetModuleHandleA("ntdll.dll"), "ZwCreateThreadEx");
@@ -135,7 +135,7 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	NTSTATUS status = nt_create_thread_address(&remote_thread, 0x1FFFFF, NULL, hProcess, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1),
 		LoaderMemory, NULL, NULL, NULL, NULL, NULL);
 	if (remote_thread == NULL || status) {
-		throw ERROR_CREATE_THREAD;
+		return ERROR_CREATE_THREAD;
 	}
 	WaitForSingleObject(remote_thread, INFINITE);
 
@@ -143,13 +143,14 @@ StealthInject::StealthInject(HANDLE hProcess, LPVOID baseAddrDLL) {
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }
 
-StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
-	if (!hProcess) { throw ERROR_INVALID_HANDLE; }
+RETURN_STATUS StealthInject::InjectFromPath(LPCSTR DLLpath) {
+	HANDLE hProcess = this->hProcess;
+	if (!hProcess) { return ERROR_INVALID_HANDLE; }
 	// Load DLL into own memory
 	std::ifstream File(DLLpath, std::ios::binary | std::ios::ate);
 	size_t szFile = File.tellg();
 	if (szFile < 0x1000) { // if file smaller than 4096
-		throw ERROR_INVALID_FILE;
+		return ERROR_INVALID_FILE;
 	}
 	PBYTE FileBuffer = new BYTE[szFile];
 	File.seekg(0, std::ios::beg);
@@ -165,19 +166,19 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 	// Allocate memory for the image in remote process
 	PVOID ExecutableImage = VirtualAllocEx(hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!ExecutableImage) { StealthInject::lastError = GetLastError(); throw ERROR_ALLOCATION_IMAGE; }
+	if (!ExecutableImage) { this->lastError = GetLastError(); return ERROR_ALLOCATION_IMAGE; }
 	// Copy the headers to target process
 	if(!WriteProcessMemory(hProcess, ExecutableImage, FileBuffer,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
-		StealthInject::lastError = GetLastError();
-		throw ERROR_WRITE_IMAGE;
+		this->lastError = GetLastError();
+		return ERROR_WRITE_IMAGE;
 	}
 	// Copy sections
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++){
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
 			(PVOID)((LPBYTE)FileBuffer + pSection[i].PointerToRawData), pSection[i].SizeOfRawData, NULL)) {
-			StealthInject::lastError = GetLastError();
-			throw ERROR_WRITE_SECTION;
+			this->lastError = GetLastError();
+			return ERROR_WRITE_SECTION;
 		}
 	}
 	
@@ -191,45 +192,52 @@ StealthInject::StealthInject(HANDLE hProcess, LPCSTR DLLpath) {
 
 	// Allocate memory for the loader data
 	PVOID LoaderMemory = VirtualAllocEx(hProcess, NULL, sizeof(loaderdata), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!LoaderMemory) { throw ERROR_ALLOCATION_LOADER_DATA; }
+	if (!LoaderMemory) { return ERROR_ALLOCATION_LOADER_DATA; }
 	// Write loader data to memory
-	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { throw ERROR_WRITE_LOADER_DATA; }
+	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { return ERROR_WRITE_LOADER_DATA; }
 	// Write Internal loader shellcode
-	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { throw ERROR_WRITE_SHELLCODE; }
+	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { return ERROR_WRITE_SHELLCODE; }
 	// Create remote thread to call the internal loader
 	fNtCreateThreadEx nt_create_thread_address = (fNtCreateThreadEx)GetProcAddress(GetModuleHandleA("ntdll.dll"), "ZwCreateThreadEx");
 	HANDLE remote_thread = NULL;
 	NTSTATUS status = nt_create_thread_address(&remote_thread, 0x1FFFFF, NULL, hProcess, (LPTHREAD_START_ROUTINE)((loaderdata*)LoaderMemory + 1),
 		LoaderMemory, NULL, NULL, NULL, NULL, NULL);
 	if (remote_thread == NULL || status) {
-		throw ERROR_CREATE_THREAD;
+		return ERROR_CREATE_THREAD;
 	}
 	WaitForSingleObject(remote_thread, INFINITE);
 	
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
 }
-StealthInject::StealthInject(HANDLE hProcess, LPCSTR Dllpath, bool regularInject) {
-	if (!regularInject) { throw ERROR_INVALID_PARAMETERS; }
+
+RETURN_STATUS StealthInject::NormalInject(LPCSTR Dllpath) {
 	if (!hProcess) { throw ERROR_INVALID_HANDLE; }
 
 	size_t strSz = strlen(Dllpath);
 
 	LPVOID strAddress = VirtualAllocEx(hProcess, NULL, strSz, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-	if (!strAddress) { StealthInject::lastError = GetLastError(); throw ERROR_ALLOCATION_STRING; }
+	if (!strAddress) { this->lastError = GetLastError(); return ERROR_ALLOCATION_STRING; }
 
-	if (!WriteProcessMemory(hProcess, strAddress, Dllpath, strSz, 0)) { StealthInject::lastError = GetLastError();  throw ERROR_WRITE_STRING; }
+	if (!WriteProcessMemory(hProcess, strAddress, Dllpath, strSz, 0)) { this->lastError = GetLastError();  return ERROR_WRITE_STRING; }
 	
 	HANDLE thread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryA, strAddress, NULL, NULL);
-	if (!thread) { StealthInject::lastError = GetLastError(); throw ERROR_THREAD_CREATION; }
+	if (!thread) { this->lastError = GetLastError(); return ERROR_THREAD_CREATION; }
 
 	WaitForSingleObject(thread, INFINITE);
 	CloseHandle(thread);
 	VirtualFreeEx(hProcess, strAddress, 0, MEM_RELEASE);
+	return ERROR_NOERROR;
 }
 
-int StealthInject::modifyPEB(LPCWSTR pathToDLL) {
-	PTEB pTEB;
+StealthInject::StealthInject(HANDLE hProcess) {
+	this->hProcess = hProcess;
+}
+
+RETURN_STATUS StealthInject::Local_ModifyPEB(LPCSTR dllPath) {
+	PWCHAR convertedStr = new WCHAR[MAX_MODULE_NAME32];
+	mbstowcs(convertedStr, dllPath, strlen(dllPath)+1);
+
 	PPEB pPEB;
 	PPEB_LDR_DATA pLdrData;
 	PLIST_ENTRY listHead, bufferEntry;
@@ -246,15 +254,78 @@ int StealthInject::modifyPEB(LPCWSTR pathToDLL) {
 	do {
 		LdrEntry = (PLDR_DATA_TABLE_ENTRY)((ADDRESS)bufferEntry - sizeof(LPVOID)*2);
 		UNICODE_STRING dllName = LdrEntry->FullDllName;
-		if (!wcscmp(dllName.Buffer, pathToDLL)) { // If module name equals to provided name, patch the PEB
+		if (!wcscmp(dllName.Buffer, convertedStr)) { // If module name equals to provided name, patch the PEB
 			PLIST_ENTRY previous = bufferEntry->Blink;
 			PLIST_ENTRY next = bufferEntry->Flink;
 			previous->Flink = next;
 			next->Blink = previous;
 			found = true;
+			break;
 		}
 		bufferEntry = bufferEntry->Flink;
 	} while (bufferEntry != listHead);
-	if (!found) { return 1; } // DLL not found
-	return 0;
+	if (!found) { return ERROR_MODULE_NOTFOUND; } // DLL not found
+	return ERROR_NOERROR;
+}
+
+RETURN_STATUS StealthInject::Remote_ModifyPEB(LPCSTR nameOfDll) { // Like: example.dll
+	wchar_t* converted = new wchar_t[MAX_MODULE_NAME32];
+	mbstowcs(converted, nameOfDll, strlen(nameOfDll) + 1);
+
+	_PROCESS_BASIC_INFORMATION basicInfo;
+	ULONG returnLength;
+	NtQueryInformationProcess(this->hProcess, ProcessBasicInformation, &basicInfo, sizeof(basicInfo), &returnLength);
+
+	PEB remotePEB;
+	PEB_LDR_DATA remoteLdrData;
+	LIST_ENTRY listHead, bufferEntry;
+	LDR_DATA_TABLE_ENTRY LdrEntry;
+
+	if (!ReadProcessMemory(this->hProcess, basicInfo.PebBaseAddress, &remotePEB, sizeof(remotePEB), NULL)) {
+		return ERROR_READING_DATA;
+	}
+	if (!ReadProcessMemory(this->hProcess, remotePEB.Ldr, &remoteLdrData, sizeof(remoteLdrData), NULL)) {
+		return ERROR_READING_DATA;
+	}
+	listHead = remoteLdrData.InMemoryOrderModuleList;
+
+	if (!ReadProcessMemory(this->hProcess, listHead.Flink, &bufferEntry, sizeof(bufferEntry), NULL)) { // if it fails check here **************
+		return ERROR_READING_DATA;
+	}
+	ADDRESS moduleAddr = GetModuleBaseAddressW(GetProcessId(hProcess), converted);
+	bool found = false;
+	do {
+		if (!ReadProcessMemory(this->hProcess, (LPVOID)((ADDRESS)bufferEntry.Flink - sizeof(LPVOID) * 2), &LdrEntry, sizeof(LdrEntry), NULL)) {
+			this->lastError = GetLastError();
+			return ERROR_READING_DATA;
+		}
+		if ((ADDRESS)LdrEntry.DllBase == moduleAddr) { // If module name equals to provided name, patch the PEB
+			if (WriteProcessMemory(this->hProcess, (LPVOID)(LdrEntry.InMemoryOrderLinks.Flink + sizeof(LPVOID)), &LdrEntry.InMemoryOrderLinks.Blink, sizeof(LPVOID), NULL) == 0) {
+				this->lastError = GetLastError();
+				return ERROR_WRITE_PEB_PATCH;
+			}
+			if (WriteProcessMemory(this->hProcess, (LPVOID)(LdrEntry.InMemoryOrderLinks.Blink), &LdrEntry.InMemoryOrderLinks.Flink, sizeof(LPVOID), NULL) == 0) {
+				this->lastError = GetLastError();
+				return ERROR_WRITE_PEB_PATCH;
+			}
+			found = true;
+			break;
+		}
+		if (!ReadProcessMemory(this->hProcess, bufferEntry.Flink, &bufferEntry, sizeof(bufferEntry), NULL)) {
+			return ERROR_READING_DATA;
+		}
+	} while ((ADDRESS)bufferEntry.Flink != (ADDRESS)listHead.Flink);
+	if (!found) { return ERROR_MODULE_NOTFOUND; } // DLL not found
+	return ERROR_NOERROR;
+}
+
+RETURN_STATUS StealthInject::removePE(LPCSTR nameOfDll) { // On Stealth injection it is done automatically
+	wchar_t* converted = new wchar_t[MAX_MODULE_NAME32];
+	mbstowcs(converted, nameOfDll, strlen(nameOfDll) + 1);
+	ADDRESS moduleAddr = GetModuleBaseAddressW(GetProcessId(hProcess), converted);
+	if (!moduleAddr) {
+		return ERROR_MODULE_NOTFOUND;
+	}
+	ZeroMemory((LPVOID)moduleAddr, 0x9f); // Remove PE signatures
+	return ERROR_NOERROR;
 }

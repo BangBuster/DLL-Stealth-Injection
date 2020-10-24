@@ -5,14 +5,10 @@
 #pragma warning(disable:4996)
 
 inline void print() {
-    AllocConsole();
-    freopen("CONOUT$", "w", stdout);
     while (1) {
-        std::cout << "I'm IN!" << std::endl;
+        std::cout << "ree\n";
         Sleep(100);
     }
-   
-    FreeConsole();
 }
 BOOL APIENTRY DllMain(HMODULE hModule,
     DWORD  ul_reason_for_call,
@@ -23,7 +19,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
     {
     case DLL_PROCESS_ATTACH:
     {
-        print();
+        CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)print, NULL, NULL, NULL);
         break;
     }
     case DLL_THREAD_ATTACH:
