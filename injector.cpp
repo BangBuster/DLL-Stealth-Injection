@@ -25,7 +25,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 	while (pIBR->VirtualAddress) {											// while base relocation table exists
 		if (pIBR->SizeOfBlock >= sizeof(IMAGE_BASE_RELOCATION)) {			// if block valid
 			int numberOfEnteries = (pIBR->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / 2;		// number of enteries in table
-			PWORD entry = (PWORD)(pIBR + 1);																								
+			PWORD entry = (PWORD)(pIBR + 1);
 
 			for (int i = 0; i < numberOfEnteries; i++) {					// Looping through table
 				if (entry[i]) {												// If list isnt null
@@ -39,7 +39,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 
 	// fix DLL imports and call if necessary
 	PIMAGE_IMPORT_DESCRIPTOR pIID = LoaderParams->ImportDirectory;
-	while (pIID->Characteristics){			// While imports exists
+	while (pIID->Characteristics) {			// While imports exists
 		PIMAGE_THUNK_DATA OrigFirstThunk = (PIMAGE_THUNK_DATA)((LPBYTE)LoaderParams->ImageBaseAddr + pIID->OriginalFirstThunk); // look up table
 		PIMAGE_THUNK_DATA FirstThunk = (PIMAGE_THUNK_DATA)((LPBYTE)LoaderParams->ImageBaseAddr + pIID->FirstThunk); // IAT
 		HMODULE hModule = LoaderParams->fnLoadLibraryA((LPCSTR)LoaderParams->ImageBaseAddr + pIID->Name); // loads descriptor library
@@ -47,7 +47,7 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 		if (!hModule)
 			return FALSE;
 
-		while (OrigFirstThunk->u1.AddressOfData){
+		while (OrigFirstThunk->u1.AddressOfData) {
 			if (OrigFirstThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) // if function is imported by ordinal
 			{
 				// Import by ordinal
@@ -62,9 +62,9 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 			else {
 				// Import by name
 				PIMAGE_IMPORT_BY_NAME pIBN = (PIMAGE_IMPORT_BY_NAME)((LPBYTE)LoaderParams->ImageBaseAddr + OrigFirstThunk->u1.AddressOfData);
-				
+
 				DWORD64 Function = (DWORD64)LoaderParams->fnGetProcAddress(hModule, (LPCSTR)pIBN->Name); // get function addr by its name
-				
+
 				if (!Function)
 					return FALSE;
 
@@ -75,9 +75,9 @@ DWORD InternalLoader(LPVOID loaderLocation) {
 		}
 		pIID++;
 	}
-	if (LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint){
+	if (LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint) {
 		dllEntry EntryPoint = (dllEntry)((LPBYTE)LoaderParams->ImageBaseAddr + LoaderParams->NtHeaders->OptionalHeader.AddressOfEntryPoint);
-		ZeroMemory(LoaderParams->ImageBaseAddr, 0x9f); // Remove PE signatures
+		//ZeroMemory(LoaderParams->ImageBaseAddr, 0x9f); // Remove PE signatures
 		return EntryPoint((HMODULE)LoaderParams->ImageBaseAddr, DLL_PROCESS_ATTACH, NULL); // Call the entry point
 	}
 	return TRUE;
@@ -97,22 +97,23 @@ RETURN_STATUS StealthInject::InjectFromMemory(ADDRESS baseAddrDLL) {
 	PVOID ExecutableImage = VirtualAllocEx(hProcess, NULL, pNtHeaders->OptionalHeader.SizeOfImage,
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!ExecutableImage) { this->lastError = GetLastError(); return ERROR_ALLOCATION_IMAGE; }
+
 	// Copy the image to target process
 	if (!WriteProcessMemory(hProcess, ExecutableImage, (LPVOID)baseAddrDLL,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
 		this->lastError = GetLastError();
 		return ERROR_WRITE_IMAGE;
 	}
-	
+
 	// Copy sections
 	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++) {
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
 			(PVOID)((LPBYTE)baseAddrDLL + pSection[i].PointerToRawData), pSection[i].SizeOfRawData, NULL)) {
-			this->lastError = GetLastError();
-			return ERROR_WRITE_SECTION;
+				this->lastError = GetLastError();
+				return ERROR_WRITE_SECTION;
 		}
 	}
-	
+
 	// Fill loader data
 	_loaderdata.ImageBaseAddr = ExecutableImage;
 	_loaderdata.NtHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)ExecutableImage + pDosHeader->e_lfanew);
@@ -124,11 +125,13 @@ RETURN_STATUS StealthInject::InjectFromMemory(ADDRESS baseAddrDLL) {
 	// Allocate memory for the loader data
 	PVOID LoaderMemory = VirtualAllocEx(hProcess, NULL, sizeof(loaderdata), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!LoaderMemory) { return ERROR_ALLOCATION_LOADER_DATA; }
+
 	// Write loader data to memory
 	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { return ERROR_WRITE_LOADER_DATA; }
+
 	// Write Internal loader shellcode
 	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { return ERROR_WRITE_SHELLCODE; }
-	
+
 	// Create remote thread to call the internal loader
 	fNtCreateThreadEx nt_create_thread_address = (fNtCreateThreadEx)GetProcAddress(GetModuleHandleA("ntdll.dll"), "ZwCreateThreadEx");
 	HANDLE remote_thread = NULL;
@@ -141,6 +144,7 @@ RETURN_STATUS StealthInject::InjectFromMemory(ADDRESS baseAddrDLL) {
 
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
+	return ERROR_NOERROR;
 }
 
 RETURN_STATUS StealthInject::InjectFromPath(LPCSTR DLLpath) {
@@ -168,20 +172,20 @@ RETURN_STATUS StealthInject::InjectFromPath(LPCSTR DLLpath) {
 		MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!ExecutableImage) { this->lastError = GetLastError(); return ERROR_ALLOCATION_IMAGE; }
 	// Copy the headers to target process
-	if(!WriteProcessMemory(hProcess, ExecutableImage, FileBuffer,
+	if (!WriteProcessMemory(hProcess, ExecutableImage, FileBuffer,
 		pNtHeaders->OptionalHeader.SizeOfHeaders, NULL)) {
 		this->lastError = GetLastError();
 		return ERROR_WRITE_IMAGE;
 	}
 	// Copy sections
-	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++){
+	for (int i = 0; i < pNtHeaders->FileHeader.NumberOfSections; i++) {
 		if (!WriteProcessMemory(hProcess, (PVOID)((LPBYTE)ExecutableImage + pSection[i].VirtualAddress),
 			(PVOID)((LPBYTE)FileBuffer + pSection[i].PointerToRawData), pSection[i].SizeOfRawData, NULL)) {
-			this->lastError = GetLastError();
-			return ERROR_WRITE_SECTION;
+				this->lastError = GetLastError();
+				return ERROR_WRITE_SECTION;
 		}
 	}
-	
+
 	// Fill loader data
 	_loaderdata.ImageBaseAddr = ExecutableImage;
 	_loaderdata.NtHeaders = (PIMAGE_NT_HEADERS)((LPBYTE)ExecutableImage + pDosHeader->e_lfanew);
@@ -197,6 +201,7 @@ RETURN_STATUS StealthInject::InjectFromPath(LPCSTR DLLpath) {
 	if (!WriteProcessMemory(hProcess, LoaderMemory, &_loaderdata, sizeof(_loaderdata), NULL)) { return ERROR_WRITE_LOADER_DATA; }
 	// Write Internal loader shellcode
 	if (!WriteProcessMemory(hProcess, (LPVOID)((loaderdata*)LoaderMemory + 1), InternalLoader, (DWORD)referencePoint - (DWORD)InternalLoader, NULL)) { return ERROR_WRITE_SHELLCODE; }
+	
 	// Create remote thread to call the internal loader
 	fNtCreateThreadEx nt_create_thread_address = (fNtCreateThreadEx)GetProcAddress(GetModuleHandleA("ntdll.dll"), "ZwCreateThreadEx");
 	HANDLE remote_thread = NULL;
@@ -205,10 +210,12 @@ RETURN_STATUS StealthInject::InjectFromPath(LPCSTR DLLpath) {
 	if (remote_thread == NULL || status) {
 		return ERROR_CREATE_THREAD;
 	}
+
 	WaitForSingleObject(remote_thread, INFINITE);
-	
+
 	// Clean up
 	VirtualFreeEx(hProcess, LoaderMemory, 0, MEM_RELEASE);
+	return ERROR_NOERROR;
 }
 
 RETURN_STATUS StealthInject::NormalInject(LPCSTR Dllpath) {
@@ -220,7 +227,7 @@ RETURN_STATUS StealthInject::NormalInject(LPCSTR Dllpath) {
 	if (!strAddress) { this->lastError = GetLastError(); return ERROR_ALLOCATION_STRING; }
 
 	if (!WriteProcessMemory(hProcess, strAddress, Dllpath, strSz, 0)) { this->lastError = GetLastError();  return ERROR_WRITE_STRING; }
-	
+
 	HANDLE thread = CreateRemoteThread(hProcess, NULL, NULL, (LPTHREAD_START_ROUTINE)LoadLibraryA, strAddress, NULL, NULL);
 	if (!thread) { this->lastError = GetLastError(); return ERROR_THREAD_CREATION; }
 
@@ -236,7 +243,7 @@ StealthInject::StealthInject(HANDLE hProcess) {
 
 RETURN_STATUS StealthInject::Local_ModifyPEB(LPCSTR dllPath) {
 	PWCHAR convertedStr = new WCHAR[MAX_MODULE_NAME32];
-	mbstowcs(convertedStr, dllPath, strlen(dllPath)+1);
+	mbstowcs(convertedStr, dllPath, strlen(dllPath) + 1);
 
 	PPEB pPEB;
 	PPEB_LDR_DATA pLdrData;
@@ -252,7 +259,7 @@ RETURN_STATUS StealthInject::Local_ModifyPEB(LPCSTR dllPath) {
 	bufferEntry = listHead->Flink;
 	bool found = false;
 	do {
-		LdrEntry = (PLDR_DATA_TABLE_ENTRY)((ADDRESS)bufferEntry - sizeof(LPVOID)*2);
+		LdrEntry = (PLDR_DATA_TABLE_ENTRY)((ADDRESS)bufferEntry - sizeof(LPVOID) * 2);
 		UNICODE_STRING dllName = LdrEntry->FullDllName;
 		if (!wcscmp(dllName.Buffer, convertedStr)) { // If module name equals to provided name, patch the PEB
 			PLIST_ENTRY previous = bufferEntry->Blink;

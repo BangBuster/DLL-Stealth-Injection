@@ -39,6 +39,7 @@ extern struct StealthInject {
 									  Hide your module from the PEB so it won't be listed in the process. */
 	RETURN_STATUS Remote_ModifyPEB(LPCSTR pathToDLL);
 	RETURN_STATUS removePE(LPCSTR nameOfDll);
+	RETURN_STATUS Remote_removePE(LPCSTR nameOfDll);
 private:
 
 	ADDRESS remoteAddress;

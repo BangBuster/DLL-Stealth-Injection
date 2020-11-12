@@ -5,6 +5,8 @@
 #pragma warning(disable:4996)
 
 inline void print() {
+    AllocConsole();
+    freopen("CONOUT$", "w", stdout);
     while (1) {
         std::cout << "ree\n";
         Sleep(100);
