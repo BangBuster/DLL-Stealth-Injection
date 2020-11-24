@@ -9,7 +9,7 @@
 *.user
 *.userosscache
 *.sln.docstates
-
+DLL Stealth Injection*
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
